@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>今天吃什麼？轉盤決定！</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            padding: 20px;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 25px;
+            color: #2c3e50;
+            text-align: center;
+        }
+        /* 放大轉盤容器尺寸 (從 320px 改為 380px) */
+        .container {
+            position: relative;
+            width: 380px;
+            height: 380px;
+            max-width: 92vw;
+            max-height: 92vw;
+        }
+        /* 轉盤指標 */
+        .pointer {
+            position: absolute;
+            top: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 18px solid transparent;
+            border-right: 18px solid transparent;
+            border-top: 35px solid #e74c3c;
+            z-index: 10;
+            filter: drop-shadow(0 3px 5px rgba(0,0,0,0.25));
+        }
+        /* 轉盤本體畫布尺寸拉大到 700x700 讓文字更清晰 */
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            box-shadow: 0 12px 30px rgba(0,0,0,0.18);
+            background-color: #fff;
+        }
+        /* 開始按鈕 */
+        .spin-btn {
+            margin-top: 35px;
+            padding: 14px 40px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: #fff;
+            background: #e74c3c;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 6px 18px rgba(231, 76, 60, 0.4);
+            transition: all 0.2s ease;
+        }
+        .spin-btn:active {
+            transform: scale(0.95);
+        }
+        .spin-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        /* 結果彈跳視窗 */
+        .result-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .result-content {
+            background: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            animation: popUp 0.3s ease;
+            width: 80%;
+            max-width: 320px;
+        }
+        .result-content h2 {
+            font-size: 1.5rem;
+            color: #27ae60;
+            margin-bottom: 15px;
+        }
+        .result-content p {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .result-content button {
+            padding: 10px 22px;
+            background: #3498db;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+        @keyframes popUp {
+            0% { transform: scale(0.7); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🍽️ 今天決定吃什麼？</h1>
+
+    <div class="container">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="700" height="700"></canvas>
+    </div>
+
+    <button id="spinBtn" class="spin-btn" onclick="startSpin()">開始轉動！</button>
+
+    <!-- 結果彈窗 -->
+    <div id="resultModal" class="result-modal">
+        <div class="result-content">
+            <h2>🎉 就決定是它了！</h2>
+            <p id="resultText">火鍋</p>
+            <button onclick="closeModal()">好，馬上出發！</button>
+        </div>
+    </div>
+
+    <script>
+        // 你指定的 13 個選項清單
+        const options = [
+            "巨城", 
+            "火鍋", 
+            "海牛冰城", 
+            "巧捷", 
+            "滷肉飯", 
+            "小籠包", 
+            "雞排", 
+            "食期家", 
+            "三媽", 
+            "關東煮", 
+            "叫外送", 
+            "披薩", 
+            "麥當勞"
+        ];
+
+        // 鮮明且豐富的顏色盤（對應 13 個選項）
+        const colors = [
+            "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEEAD", 
+            "#D4A5A5", "#9B59B6", "#3498DB", "#E67E22", "#1ABC9C",
+            "#F1C40F", "#E84393", "#00CEC9"
+        ];
+
+        const canvas = document.getElementById('wheel');
+        const ctx = canvas.getContext('2d');
+        const spinBtn = document.getElementById('spinBtn');
+        const resultModal = document.getElementById('resultModal');
+        const resultText = document.getElementById('resultText');
+
+        const arc = Math.PI / (options.length / 2);
+        let startAngle = 0;
+        let currentAngle = 0;
+        let isSpinning = false;
+
+        // 繪製轉盤
+        function drawWheel() {
+            const outsideRadius = 310;
+            const textRadius = 210;
+            const insideRadius = 0;
+
+            ctx.clearRect(0, 0, 700, 700);
+            ctx.save();
+            ctx.translate(350, 350);
+            ctx.rotate(currentAngle);
+
+            for (let i = 0; i < options.length; i++) {
+                const angle = startAngle + i * arc;
+
+                // 畫扇形區塊
+                ctx.beginPath();
+                ctx.arc(0, 0, outsideRadius, angle, angle + arc, false);
+                ctx.arc(0, 0, insideRadius, angle + arc, angle, true);
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.fill();
+                ctx.strokeStyle = "#ffffff";
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // 畫文字
+                ctx.save();
+                ctx.fillStyle = "#ffffff";
+                ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+                ctx.shadowBlur = 5;
+                ctx.font = "bold 20px sans-serif"; // 調整字體大小適應 13 等分
+                ctx.translate(
+                    Math.cos(angle + arc / 2) * textRadius,
+                    Math.sin(angle + arc / 2) * textRadius
+                );
+                ctx.rotate(angle + arc / 2 + Math.PI / 2);
+                const text = options[i];
+                ctx.fillText(text, -ctx.measureText(text).width / 2, 0);
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
+        // 開始旋轉邏輯
+        function startSpin() {
+            if (isSpinning) return;
+            isSpinning = true;
+            spinBtn.disabled = true;
+
+            const randomRounds = Math.floor(Math.random() * 4) + 5;
+            const randomAngle = Math.random() * Math.PI * 2;
+            const totalRotation = (Math.PI * 2 * randomRounds) + randomAngle;
+
+            const startTime = performance.now();
+            const duration = 4000; // 4 秒
+
+            function animate(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                const easeOut = 1 - Math.pow(1 - progress, 3);
+                currentAngle = totalRotation * easeOut;
+
+                drawWheel();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    isSpinning = false;
+                    spinBtn.disabled = false;
+                    calcResult();
+                }
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // 計算指針指向的選項
+        function calcResult() {
+            const degrees = currentAngle * (180 / Math.PI) % 360;
+            const correctedDegrees = (360 - (degrees % 360) + 270) % 360;
+            const sliceDegree = 360 / options.length;
+            const winningIndex = Math.floor(correctedDegrees / sliceDegree);
+
+            const winner = options[winningIndex];
+            resultText.innerText = winner;
+            resultModal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            resultModal.style.display = 'none';
+        }
+
+        // 初始化繪製
+        drawWheel();
+    </script>
+</body>
+</html>
